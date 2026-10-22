@@ -13,6 +13,8 @@ import { useEffect, type ReactNode } from "react";
 import appCss from "../styles.css?url";
 import { SiteNav } from "../components/SiteNav";
 import { FloatingAssistant } from "../components/FloatingAssistant";
+import { OfflineStatusBanner } from "../components/OfflineStatusBanner";
+import { KeyboardShortcutGuide } from "../components/KeyboardShortcutGuide";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 
 function NotFoundComponent() {
@@ -137,6 +139,7 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <div className="flex min-h-screen flex-col">
+        <OfflineStatusBanner />
         <SiteNav />
         <main className="flex-1">
           {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
@@ -146,6 +149,7 @@ function RootComponent() {
           🛡️ SafeScan AI — Your AI Shield Against Digital Scams. Emergency? Call 1930.
         </footer>
         <FloatingAssistant />
+        <KeyboardShortcutGuide />
       </div>
     </QueryClientProvider>
   );

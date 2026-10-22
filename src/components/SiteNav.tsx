@@ -173,6 +173,16 @@ export function SiteNav() {
             <span className="h-1.5 w-1.5 rounded-full bg-safe animate-pulse-ring" /> PROTECTION ACTIVE
           </span>
           <button
+            onClick={() => {
+              window.dispatchEvent(new KeyboardEvent("keydown", { key: "?" }));
+            }}
+            aria-label="Keyboard shortcuts (?)"
+            title="Keyboard shortcuts (?)"
+            className="hidden sm:inline-flex items-center rounded-lg border border-border px-2 py-1.5 font-mono text-xs text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+          >
+            ⌨️ ?
+          </button>
+          <button
             onClick={toggleTheme}
             aria-label={theme === "light" ? "Switch to dark theme" : "Switch to light theme"}
             title={theme === "light" ? "Dark theme" : "Light theme"}
