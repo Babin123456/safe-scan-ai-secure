@@ -1,3 +1,5 @@
+import { detectHinglishScamPatterns } from "./heuristics/hinglish-patterns";
+
 export type RiskLevel = "low" | "medium" | "high";
 
 export type Factor = {
@@ -213,9 +215,21 @@ export function analyzeSms(text: string): ScanResult {
     positives.push("No links or payment requests in the message");
   }
 
+  const hinglishMatches = detectHinglishScamPatterns(text);
+  if (hinglishMatches.length) {
+    for (const match of hinglishMatches) {
+      reasons.push(`🇮🇳 ${match.categoryLabel}: ${match.explanation}`);
+    }
+    patternRisk += 30 + hinglishMatches.length * 8;
+    communityRisk += 35;
+  }
+
   const riskAvg = (domainRisk + authRisk + communityRisk + patternRisk) / 4;
   let score = clamp(100 - riskAvg);
   if (urls.some((u) => /sbi-update-kyc/.test(hostOf(u)))) score = 18;
+  if (hinglishMatches.some((m) => m.severity === "critical" && (urls.length > 0 || money || urgentHits.length > 0))) {
+    score = Math.min(score, 25);
+  }
   const level = levelForScore(score);
 
   return {
@@ -238,13 +252,16 @@ export function analyzeSms(text: string): ScanResult {
           ? "Verify with the official bank app or customer care before acting."
           : "No action needed. Stay alert to messages asking for OTP or payment.",
     dna:
-      level === "high" && bankHits.length
+      level === "high" && (bankHits.length || hinglishMatches.length)
         ? { pattern: "Fake KYC + Urgency + Banking + Link", reports: 247, variations: 18, domains: 6, banks: 3 }
         : undefined,
     meta: [
       { label: "Links found", value: urls.length ? urls.join(", ") : "None" },
       { label: "Urgency markers", value: String(urgentHits.length) },
       { label: "Brand mentions", value: bankHits.length ? bankHits.join(", ").toUpperCase() : "None" },
+      ...(hinglishMatches.length
+        ? [{ label: "Regional Scam Match", value: hinglishMatches.map((m) => m.categoryLabel).join("; ") }]
+        : []),
     ],
   };
 }

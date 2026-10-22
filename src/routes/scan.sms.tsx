@@ -5,6 +5,8 @@ import { ScanProgress } from "@/components/ScanProgress";
 import { ScanResultView } from "@/components/ScanResultView";
 import { analyzeSms, DEMO, SMS_CHECKS, type ScanResult } from "@/lib/scan-engine";
 import { recordScan } from "@/lib/store";
+import { HighlightedMessageText } from "@/components/sms/HighlightedMessageText";
+import { ScamTemplatesCatalog } from "@/components/sms/ScamTemplatesCatalog";
 
 export const Route = createFileRoute("/scan/sms")({
   head: () => ({
@@ -30,8 +32,9 @@ function SmsScanner() {
   const [result, setResult] = useState<ScanResult | null>(null);
   const [error, setError] = useState("");
 
-  function start() {
-    const value = text.trim();
+  function start(customText?: string) {
+    const raw = customText ?? text;
+    const value = raw.trim();
     if (value.length < 10) {
       setError("Paste at least a few words from the message.");
       return;
@@ -46,6 +49,11 @@ function SmsScanner() {
     if (result) recordScan({ kind: "sms", subject: result.subject, score: result.score, level: result.level });
   }
 
+  const handleSelectTemplate = (templateMessage: string) => {
+    setText(templateMessage);
+    start(templateMessage);
+  };
+
   return (
     <div className="mx-auto max-w-5xl px-4 py-12">
       <PageHeader
@@ -55,32 +63,38 @@ function SmsScanner() {
       />
 
       {phase === "idle" && (
-        <div className="glass mx-auto max-w-2xl rounded-2xl p-7">
-          <label htmlFor="sms" className="font-mono text-xs uppercase tracking-[0.3em] text-muted-foreground">
-            Paste suspicious SMS
-          </label>
-          <textarea
-            id="sms"
-            value={text}
-            rows={6}
-            maxLength={2000}
-            onChange={(e) => setText(e.target.value)}
-            placeholder="Your SBI account will be blocked... Update your KYC immediately... Click here: sbi-update-kyc.com"
-            className="mt-3 w-full resize-none rounded-xl border border-input bg-background/60 px-4 py-3 font-mono text-sm outline-none transition-shadow focus:ring-2 focus:ring-ring"
-          />
-          {error && <p className="mt-2 text-xs text-danger">{error}</p>}
-          <button
-            onClick={start}
-            className="glow-primary mt-4 w-full rounded-xl bg-primary py-3 font-semibold tracking-wide text-primary-foreground"
-          >
-            ANALYZE SMS
-          </button>
-          <button
-            onClick={() => setText(DEMO.sms)}
-            className="mt-3 w-full rounded-xl border border-border py-2.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-          >
-            Load demo scam message
-          </button>
+        <div className="space-y-8">
+          <div className="glass mx-auto max-w-2xl rounded-2xl p-7">
+            <label htmlFor="sms" className="font-mono text-xs uppercase tracking-[0.3em] text-muted-foreground">
+              Paste suspicious SMS
+            </label>
+            <textarea
+              id="sms"
+              value={text}
+              rows={6}
+              maxLength={2000}
+              onChange={(e) => setText(e.target.value)}
+              placeholder="Your SBI account will be blocked... Update your KYC immediately... Click here: sbi-update-kyc.com"
+              className="mt-3 w-full resize-none rounded-xl border border-input bg-background/60 px-4 py-3 font-mono text-sm outline-none transition-shadow focus:ring-2 focus:ring-ring"
+            />
+            {error && <p className="mt-2 text-xs text-danger">{error}</p>}
+            <button
+              onClick={() => start()}
+              className="glow-primary mt-4 w-full rounded-xl bg-primary py-3 font-semibold tracking-wide text-primary-foreground"
+            >
+              ANALYZE SMS
+            </button>
+            <button
+              onClick={() => {
+                setText(DEMO.sms);
+              }}
+              className="mt-3 w-full rounded-xl border border-border py-2.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Load demo scam message
+            </button>
+          </div>
+
+          <ScamTemplatesCatalog onSelect={handleSelectTemplate} />
         </div>
       )}
 
@@ -96,14 +110,17 @@ function SmsScanner() {
       )}
 
       {phase === "done" && result && (
-        <ScanResultView
-          result={result}
-          onReset={() => {
-            setPhase("idle");
-            setResult(null);
-            setText("");
-          }}
-        />
+        <div className="space-y-6">
+          <HighlightedMessageText text={text} />
+          <ScanResultView
+            result={result}
+            onReset={() => {
+              setPhase("idle");
+              setResult(null);
+              setText("");
+            }}
+          />
+        </div>
       )}
     </div>
   );
