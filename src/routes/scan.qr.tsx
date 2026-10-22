@@ -5,6 +5,9 @@ import { ScanProgress } from "@/components/ScanProgress";
 import { ScanResultView } from "@/components/ScanResultView";
 import { analyzeQr, DEMO, QR_CHECKS, type ScanResult } from "@/lib/scan-engine";
 import { recordScan } from "@/lib/store";
+import { parseQrPayload, type ParsedQrPayload } from "@/lib/qr-payload-parser";
+import { QrViewfinder } from "@/components/qr/QrViewfinder";
+import { QrDecodedCard } from "@/components/qr/QrDecodedCard";
 
 export const Route = createFileRoute("/scan/qr")({
   head: () => ({
@@ -28,13 +31,16 @@ function QrScanner() {
   const [phase, setPhase] = useState<"idle" | "scanning" | "done">("idle");
   const [result, setResult] = useState<ScanResult | null>(null);
   const [payload, setPayload] = useState("");
+  const [parsedPayload, setParsedPayload] = useState<ParsedQrPayload | null>(null);
   const [error, setError] = useState("");
   const [camera, setCamera] = useState(false);
+  const [facingMode, setFacingMode] = useState<"environment" | "user">("environment");
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
   function run(raw: string) {
     setPayload(raw);
+    setParsedPayload(parseQrPayload(raw));
     setResult(analyzeQr(raw));
     setError("");
     setPhase("scanning");
@@ -45,6 +51,12 @@ function QrScanner() {
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
     setCamera(false);
+  }
+
+  function flipCamera() {
+    stopCamera();
+    setFacingMode((prev) => (prev === "environment" ? "user" : "environment"));
+    setTimeout(() => setCamera(true), 150);
   }
 
   async function decodeFile(file: File) {
@@ -77,7 +89,7 @@ function QrScanner() {
     (async () => {
       try {
         const jsQR = (await import("jsqr")).default;
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode } });
         if (cancelled) {
           stream.getTracks().forEach((t) => t.stop());
           return;
@@ -120,7 +132,7 @@ function QrScanner() {
       streamRef.current?.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     };
-  }, [camera]);
+  }, [camera, facingMode]);
 
   function finish() {
     setPhase("done");
@@ -137,41 +149,48 @@ function QrScanner() {
 
       {phase === "idle" && (
         <div className="glass mx-auto max-w-2xl rounded-2xl p-7">
-          <div className="scanline mx-auto flex aspect-square w-full max-w-xs items-center justify-center overflow-hidden rounded-2xl border-2 border-dashed border-primary/40 bg-background/40">
-            {camera ? (
+          {camera ? (
+            <div className="relative mx-auto aspect-square w-full max-w-sm overflow-hidden rounded-2xl border-2 border-primary bg-black">
               <video ref={videoRef} playsInline muted className="h-full w-full object-cover" />
-            ) : (
+              <div className="absolute inset-0">
+                <QrViewfinder onFlipCamera={flipCamera} onClose={stopCamera} />
+              </div>
+            </div>
+          ) : (
+            <div className="scanline mx-auto flex aspect-square w-full max-w-xs items-center justify-center overflow-hidden rounded-2xl border-2 border-dashed border-primary/40 bg-background/40">
               <div className="text-center">
                 <p className="text-4xl">🔳</p>
                 <p className="mt-2 font-mono text-xs uppercase tracking-[0.3em] text-muted-foreground">QR Scanner</p>
               </div>
-            )}
-            <div className="pointer-events-none absolute inset-x-6 top-0 h-16 animate-sweep bg-gradient-to-b from-transparent via-primary/40 to-transparent" />
-          </div>
+              <div className="pointer-events-none absolute inset-x-6 top-0 h-16 animate-sweep bg-gradient-to-b from-transparent via-primary/40 to-transparent" />
+            </div>
+          )}
 
           {error && <p className="mt-4 text-center text-xs text-danger">{error}</p>}
 
-          <div className="mt-6 space-y-3">
-            <label className="glow-primary block cursor-pointer rounded-xl bg-primary py-3 text-center font-semibold text-primary-foreground">
-              Upload QR Image
-              <input
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) void decodeFile(f);
-                }}
-              />
-            </label>
-            <p className="text-center font-mono text-xs text-muted-foreground">OR</p>
-            <button
-              onClick={() => (camera ? stopCamera() : setCamera(true))}
-              className="w-full rounded-xl border border-border bg-secondary py-3 font-semibold"
-            >
-              {camera ? "Stop Camera" : "Open Camera"}
-            </button>
-          </div>
+          {!camera && (
+            <div className="mt-6 space-y-3">
+              <label className="glow-primary block cursor-pointer rounded-xl bg-primary py-3 text-center font-semibold text-primary-foreground">
+                Upload QR Image
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) void decodeFile(f);
+                  }}
+                />
+              </label>
+              <p className="text-center font-mono text-xs text-muted-foreground">OR</p>
+              <button
+                onClick={() => setCamera(true)}
+                className="w-full rounded-xl border border-border bg-secondary py-3 font-semibold"
+              >
+                Open Camera Scanner
+              </button>
+            </div>
+          )}
 
           <div className="mt-6 border-t border-border pt-5">
             <p className="font-mono text-xs uppercase tracking-[0.3em] text-muted-foreground">No QR handy?</p>
@@ -205,20 +224,19 @@ function QrScanner() {
       )}
 
       {phase === "done" && result && (
-        <>
-          <p className="mb-4 break-all text-center font-mono text-xs text-muted-foreground">
-            Decoded payload: {payload}
-          </p>
+        <div className="space-y-6">
+          {parsedPayload && <QrDecodedCard parsed={parsedPayload} />}
           <ScanResultView
             result={result}
             onReset={() => {
               setPhase("idle");
               setResult(null);
               setPayload("");
+              setParsedPayload(null);
             }}
             resetLabel="← Scan Another QR"
           />
-        </>
+        </div>
       )}
     </div>
   );
