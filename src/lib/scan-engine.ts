@@ -1,3 +1,7 @@
+import { inspectHomoglyphs } from "./heuristics/homoglyphs";
+import { analyzeDeepUrl } from "./heuristics/url-analyzer";
+import { validateUpiPayload } from "./heuristics/upi-validator";
+
 export type RiskLevel = "low" | "medium" | "high";
 
 export type Factor = {
@@ -61,8 +65,8 @@ export function analyzeLink(input: string): ScanResult {
   const positives: string[] = [];
 
   const official = OFFICIAL.some((o) => host === o || host.endsWith("." + o));
-  const bankHit = BANKS.filter((b) => host.includes(b));
-  const baitHit = BAIT.filter((b) => host.includes(b));
+  const bankHit = BANKS.filter((b) => host.includes(b) || raw.toLowerCase().includes(`/${b}`));
+  const baitHit = BAIT.filter((b) => host.includes(b) || raw.toLowerCase().includes(`/${b}`));
   const hyphens = (host.match(/-/g) ?? []).length;
   const isIp = /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
   const shortener = SHORTENERS.some((s) => host.includes(s));
@@ -112,6 +116,24 @@ export function analyzeLink(input: string): ScanResult {
       reasons.push("No valid HTTPS/SSL certificate detected");
     } else {
       positives.push("HTTPS present (free certificates are easy for scammers to obtain)");
+    }
+
+    // Advanced heuristics: Homoglyphs / Punycode / Zero-width
+    const homoglyphReport = inspectHomoglyphs(host);
+    if (homoglyphReport.riskNote) {
+      domainRisk += 45;
+      authRisk += 40;
+      reasons.push(homoglyphReport.riskNote);
+    }
+
+    // Advanced heuristics: Deep URL inspection (obfuscated IPs, userinfo, unusual ports)
+    const deepUrlReport = analyzeDeepUrl(raw);
+    if (deepUrlReport.anomalies.length > 0) {
+      deepUrlReport.anomalies.forEach((a) => {
+        domainRisk += Math.round(a.penalty * 0.4);
+        authRisk += Math.round(a.penalty * 0.4);
+        reasons.push(a.rule);
+      });
     }
   }
 
@@ -316,6 +338,17 @@ export function analyzeQr(raw: string): ScanResult {
     authRisk += 45;
     reasons.push("🏦 Displayed merchant name does not match the underlying UPI handle");
   }
+
+  // Deep UPI validation
+  const upiValidation = validateUpiPayload(info.vpa, info.merchant, raw);
+  if (upiValidation.warnings.length > 0) {
+    upiValidation.warnings.forEach((w) => {
+      if (!reasons.includes(w)) reasons.push(w);
+    });
+    authRisk += Math.round(upiValidation.riskPenalty * 0.4);
+    patternRisk += Math.round(upiValidation.riskPenalty * 0.3);
+  }
+
   if (info.amount) {
     patternRisk += 12;
     reasons.push(`💸 QR pre-fills an amount of ₹${info.amount} — confirm it with the shop`);
