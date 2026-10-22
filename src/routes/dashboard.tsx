@@ -1,8 +1,12 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { RISK_META } from "@/lib/scan-engine";
-import { useStore } from "@/lib/store";
+import { useStore, removeScan, clearAllScans } from "@/lib/store";
 import { useAuth } from "@/hooks/use-auth";
+import { exportScansAsCsv, exportScansAsJson } from "@/lib/export-report";
+import { ScanHistoryFilters, type FilterState } from "@/components/ScanHistoryFilters";
+import { ScanAnalyticsSummary } from "@/components/ScanAnalyticsSummary";
 
 export const Route = createFileRoute("/dashboard")({
   head: () => ({
@@ -25,9 +29,16 @@ export const Route = createFileRoute("/dashboard")({
 function Dashboard() {
   const { scans, reports } = useStore();
   const { user, name } = useAuth();
+  const [filters, setFilters] = useState<FilterState>({ kind: "all", level: "all" });
 
   const count = (k: string) => scans.filter((s) => s.kind === k).length;
   const byLevel = (l: string) => scans.filter((s) => s.level === l).length;
+
+  const filteredScans = scans.filter((s) => {
+    if (filters.kind !== "all" && s.kind !== filters.kind) return false;
+    if (filters.level !== "all" && s.level !== filters.level) return false;
+    return true;
+  });
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-12">
@@ -56,6 +67,10 @@ function Dashboard() {
         >
           Scan Something
         </Link>
+      </div>
+
+      <div className="mb-6">
+        <ScanAnalyticsSummary scans={scans} />
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">
@@ -114,23 +129,78 @@ function Dashboard() {
       </section>
 
       <section className="glass mt-6 rounded-2xl p-6">
-        <h2 className="font-mono text-xs uppercase tracking-[0.3em] text-muted-foreground">Recent activity</h2>
-        {scans.length === 0 ? (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="font-mono text-xs uppercase tracking-[0.3em] text-muted-foreground">Recent activity</h2>
+          {scans.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => exportScansAsCsv(filteredScans)}
+                className="rounded-lg border border-border bg-secondary/50 px-3 py-1 text-xs font-medium text-foreground transition-colors hover:bg-secondary"
+                title="Export filtered records as CSV for bank/police complaints"
+              >
+                📄 Export CSV
+              </button>
+              <button
+                onClick={() => exportScansAsJson(filteredScans)}
+                className="rounded-lg border border-border bg-secondary/50 px-3 py-1 text-xs font-medium text-foreground transition-colors hover:bg-secondary"
+                title="Export digital evidence package in JSON format"
+              >
+                💾 Export JSON
+              </button>
+              <button
+                onClick={() => {
+                  if (confirm("Clear all recorded scan history?")) clearAllScans();
+                }}
+                className="rounded-lg border border-danger/30 px-3 py-1 text-xs font-medium text-danger transition-colors hover:bg-danger/10"
+              >
+                Clear All
+              </button>
+            </div>
+          )}
+        </div>
+
+        {scans.length > 0 && (
+          <div className="mt-4">
+            <ScanHistoryFilters
+              filters={filters}
+              onChange={(partial) => setFilters((f) => ({ ...f, ...partial }))}
+              onReset={() => setFilters({ kind: "all", level: "all" })}
+            />
+          </div>
+        )}
+
+        {filteredScans.length === 0 ? (
           <p className="mt-4 text-sm text-muted-foreground">
-            No scans yet. Try the{" "}
-            <Link to="/scan/link" className="text-primary underline">
-              Link Scanner
-            </Link>{" "}
-            with a suspicious URL.
+            {scans.length === 0 ? (
+              <>
+                No scans yet. Try the{" "}
+                <Link to="/scan/link" className="text-primary underline">
+                  Link Scanner
+                </Link>{" "}
+                with a suspicious URL.
+              </>
+            ) : (
+              "No scans match the selected filter criteria."
+            )}
           </p>
         ) : (
           <ul className="mt-4 divide-y divide-border">
-            {scans.slice(0, 8).map((s) => (
+            {filteredScans.slice(0, 15).map((s) => (
               <li key={s.id} className="flex items-center justify-between gap-4 py-3">
                 <span className="truncate text-sm">
                   {s.kind === "sms" ? "📱" : s.kind === "qr" ? "🔳" : s.kind === "mail" ? "📧" : "🔗"} {s.subject}
                 </span>
-                <span className={`font-mono text-xs font-semibold ${RISK_META[s.level].text}`}>{s.score}/100</span>
+                <div className="flex items-center gap-3 shrink-0">
+                  <span className={`font-mono text-xs font-semibold ${RISK_META[s.level].text}`}>{s.score}/100</span>
+                  <button
+                    onClick={() => removeScan(s.id)}
+                    className="text-muted-foreground hover:text-danger text-xs p-1"
+                    title="Delete this entry"
+                    aria-label={`Delete scan ${s.subject}`}
+                  >
+                    ✕
+                  </button>
+                </div>
               </li>
             ))}
           </ul>

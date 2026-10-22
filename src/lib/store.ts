@@ -113,6 +113,18 @@ export function recordScan(entry: Omit<ScanEntry, "id" | "at">) {
   emit();
 }
 
+export function removeScan(id: string) {
+  state = { ...state, scans: state.scans.filter((s) => s.id !== id) };
+  if (!signedInUserId) persist();
+  emit();
+}
+
+export function clearAllScans() {
+  state = { ...state, scans: [] };
+  if (!signedInUserId) persist();
+  emit();
+}
+
 export function addReport(input: { kind: ScanKind; title: string; description: string; level: RiskLevel }) {
   state = {
     ...state,
