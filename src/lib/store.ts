@@ -122,6 +122,15 @@ export function addReport(input: { kind: ScanKind; title: string; description: s
   emit();
 }
 
+export function confirmReport(reportId: string) {
+  state = {
+    ...state,
+    reports: state.reports.map((r) => (r.id === reportId ? { ...r, count: r.count + 1 } : r)),
+  };
+  persist();
+  emit();
+}
+
 export function useStore() {
   const [snapshot, setSnapshot] = useState<State>({ scans: [], reports: SEED_REPORTS });
 

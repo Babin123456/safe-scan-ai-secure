@@ -1,8 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
-import { RISK_META, type RiskLevel } from "@/lib/scan-engine";
-import { addReport, useStore, type ScanKind } from "@/lib/store";
+import { type RiskLevel } from "@/lib/scan-engine";
+import { addReport, confirmReport, useStore, type ScanKind } from "@/lib/store";
+import { CommunitySearchFilter, type CommunityFilterState } from "@/components/community/CommunitySearchFilter";
+import { CommunityReportCard } from "@/components/community/CommunityReportCard";
+import { filterAndSortReports, getConfirmedReportIds, saveConfirmedReportId } from "@/lib/community-service";
 
 export const Route = createFileRoute("/community")({
   head: () => ({
@@ -22,8 +25,6 @@ export const Route = createFileRoute("/community")({
   component: Community,
 });
 
-const KIND_ICON: Record<ScanKind, string> = { sms: "📱", qr: "🔳", link: "🔗", mail: "📧" };
-
 function Community() {
   const { reports } = useStore();
   const [kind, setKind] = useState<ScanKind>("sms");
@@ -32,6 +33,27 @@ function Community() {
   const [level, setLevel] = useState<RiskLevel>("high");
   const [error, setError] = useState("");
   const [sent, setSent] = useState(false);
+  const [confirmedIds, setConfirmedIds] = useState<Set<string>>(new Set());
+
+  const [filters, setFilters] = useState<CommunityFilterState>({
+    query: "",
+    kind: "all",
+    level: "all",
+    sortBy: "popular",
+  });
+
+  useEffect(() => {
+    setConfirmedIds(getConfirmedReportIds());
+  }, []);
+
+  function handleConfirm(id: string) {
+    if (confirmedIds.has(id)) return;
+    confirmReport(id);
+    saveConfirmedReportId(id);
+    setConfirmedIds((prev) => new Set([...prev, id]));
+  }
+
+  const displayedReports = filterAndSortReports(reports, filters);
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -63,24 +85,32 @@ function Community() {
 
       <div className="grid gap-8 lg:grid-cols-[1.4fr_1fr]">
         <section className="space-y-4">
-          <h2 className="font-mono text-xs uppercase tracking-[0.3em] text-muted-foreground">Recent scam reports</h2>
-          {reports.map((r) => {
-            const meta = RISK_META[r.level];
-            return (
-              <article key={r.id} className="glass rounded-2xl p-5">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h3 className="font-display text-lg font-semibold">
-                    {KIND_ICON[r.kind]} {r.title}
-                  </h3>
-                  <span className={`font-mono text-xs font-semibold ${meta.text}`}>
-                    {meta.tone} {meta.label}
-                  </span>
-                </div>
-                <p className="mt-2 text-sm text-muted-foreground">{r.description}</p>
-                <p className="mt-3 font-mono text-xs text-primary">Reported {r.count} times</p>
-              </article>
-            );
-          })}
+          <div className="flex items-center justify-between">
+            <h2 className="font-mono text-xs uppercase tracking-[0.3em] text-muted-foreground">
+              Community Scam Database ({displayedReports.length})
+            </h2>
+          </div>
+
+          <CommunitySearchFilter
+            filters={filters}
+            onChange={(partial) => setFilters((f) => ({ ...f, ...partial }))}
+            onReset={() => setFilters({ query: "", kind: "all", level: "all", sortBy: "popular" })}
+          />
+
+          {displayedReports.length === 0 ? (
+            <div className="glass rounded-2xl p-8 text-center text-sm text-muted-foreground">
+              No scam reports match your query. Try broadening your keywords.
+            </div>
+          ) : (
+            displayedReports.map((r) => (
+              <CommunityReportCard
+                key={r.id}
+                report={r}
+                onConfirm={handleConfirm}
+                hasConfirmed={confirmedIds.has(r.id)}
+              />
+            ))
+          )}
         </section>
 
         <aside className="glass h-fit rounded-2xl p-6 lg:sticky lg:top-24">
