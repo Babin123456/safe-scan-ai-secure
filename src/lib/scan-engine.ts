@@ -1,3 +1,5 @@
+import { parseDisplayNameAndEmail } from "./email-header-parser";
+
 export type RiskLevel = "low" | "medium" | "high";
 
 export type Factor = {
@@ -31,7 +33,7 @@ export function levelForScore(score: number): RiskLevel {
   return "high";
 }
 
-const BANKS = ["sbi", "hdfc", "icici", "axis", "kotak", "pnb", "boi", "paytm", "phonepe", "gpay", "upi", "rbi"];
+const BANKS = ["sbi", "hdfc", "icici", "axis", "kotak", "pnb", "boi", "paytm", "phonepe", "gpay", "upi", "rbi", "state bank", "paypal", "netflix", "amazon"];
 const BAIT = ["kyc", "verify", "update", "blocked", "suspend", "login", "secure", "otp", "refund", "reward", "lottery", "prize", "cashback", "win", "claim", "penalty", "netbank"];
 const URGENT = ["immediately", "urgent", "within 24 hours", "today", "last warning", "will be blocked", "expire", "act now", "final notice", "failure to"];
 const SHORTENERS = ["bit.ly", "tinyurl", "t.me", "cutt.ly", "is.gd", "rb.gy", "shorturl"];
@@ -383,7 +385,8 @@ function senderDomain(from: string): string {
 
 export function analyzeEmail(from: string, text: string): ScanResult {
   const lower = text.toLowerCase();
-  const domain = senderDomain(from);
+  const { displayName, email: parsedEmail, domain: parsedDomain } = parseDisplayNameAndEmail(from);
+  const domain = parsedDomain || senderDomain(from);
   const reasons: string[] = [];
   const positives: string[] = [];
   const urls = extractUrls(text);
@@ -411,6 +414,17 @@ export function analyzeEmail(from: string, text: string): ScanResult {
   } else if (official) {
     positives.push(`Sender domain ${domain} is a verified official domain`);
   }
+
+  // Display Name Spoof Check
+  const displayLower = displayName.toLowerCase();
+  const brandInDisplay = BANKS.find((b) => displayLower.includes(b));
+  if (brandInDisplay && !domain.includes(brandInDisplay)) {
+    authRisk += 65;
+    patternRisk += 30;
+    communityRisk += 35;
+    reasons.push(`🎭 Deceptive Display Name: Displays as "${displayName}" to look official, but actual sending inbox is "${parsedEmail}".`);
+  }
+
   if (spoofedBrand || lookalike) {
     authRisk += 60;
     reasons.push(`🎭 Sender domain "${domain}" impersonates a bank but is not the official domain`);
@@ -451,6 +465,7 @@ export function analyzeEmail(from: string, text: string): ScanResult {
   const riskAvg = (domainRisk + authRisk + communityRisk + patternRisk) / 4;
   let score = clamp(100 - riskAvg);
   if (urls.some((u) => /sbi-update-kyc/.test(hostOf(u))) || /sbi-update-kyc/.test(domain)) score = 18;
+  if (brandInDisplay && !domain.includes(brandInDisplay)) score = Math.min(score, 28);
   if (official) score = Math.max(score, 90);
   const level = levelForScore(score);
 
@@ -479,6 +494,7 @@ export function analyzeEmail(from: string, text: string): ScanResult {
         : undefined,
     meta: [
       { label: "Sender domain", value: domain || "unknown" },
+      ...(displayName ? [{ label: "Display Name", value: displayName }] : []),
       { label: "Links found", value: urls.length ? urls.map(hostOf).join(", ") : "None" },
       { label: "Urgency markers", value: String(urgentHits.length) },
       { label: "Brand mentions", value: bankHits.length ? bankHits.join(", ").toUpperCase() : "None" },
