@@ -1,6 +1,17 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
+import {
+  getFamilyMembers,
+  saveFamilyMembers,
+  getAlertLogs,
+  recordAlertLog,
+  generateWhatsAppAlertUrl,
+  type FamilyMember,
+  type EmergencyAlertLog,
+} from "@/lib/family-store";
+import { AddFamilyMemberModal } from "@/components/family/AddFamilyMemberModal";
+import { EmergencyAlertHistory } from "@/components/family/EmergencyAlertHistory";
 
 export const Route = createFileRoute("/family")({
   head: () => ({
@@ -20,20 +31,56 @@ export const Route = createFileRoute("/family")({
   component: Family,
 });
 
-type Member = { id: string; name: string; emoji: string; relation: string; on: boolean; guardian: boolean };
-
-const INITIAL: Member[] = [
-  { id: "m1", name: "Grandma", emoji: "👵", relation: "Uses WhatsApp & UPI daily", on: true, guardian: false },
-  { id: "m2", name: "Grandpa", emoji: "👴", relation: "Receives bank SMS alerts", on: true, guardian: false },
-  { id: "m3", name: "Mom", emoji: "👩", relation: "Pays shop QRs regularly", on: false, guardian: true },
-];
-
 function Family() {
-  const [members, setMembers] = useState(INITIAL);
+  const [members, setMembers] = useState<FamilyMember[]>([]);
   const [alerts, setAlerts] = useState(true);
-  const [sent, setSent] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [alertLogs, setAlertLogs] = useState<EmergencyAlertLog[]>([]);
+  const [whatsappUrl, setWhatsappUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    setMembers(getFamilyMembers());
+    setAlertLogs(getAlertLogs());
+  }, []);
+
+  function toggleProtection(id: string) {
+    const updated = members.map((m) => (m.id === id ? { ...m, on: !m.on } : m));
+    setMembers(updated);
+    saveFamilyMembers(updated);
+  }
+
+  function handleAddMember(newMember: Omit<FamilyMember, "id" | "on">) {
+    const created: FamilyMember = {
+      ...newMember,
+      id: `mem-${Date.now()}`,
+      on: true,
+    };
+    const updated = [...members, created];
+    setMembers(updated);
+    saveFamilyMembers(updated);
+  }
+
+  function removeMember(id: string) {
+    const updated = members.filter((m) => m.id !== id);
+    setMembers(updated);
+    saveFamilyMembers(updated);
+  }
 
   const guardian = members.find((m) => m.guardian);
+  const protectedElders = members.filter((m) => !m.guardian);
+
+  function triggerEmergencyAlert() {
+    const elder = protectedElders[0]?.name ?? "Family Member";
+    const threat = "Fake SBI KYC link detected (Score: 18/100)";
+    const newLog = recordAlertLog({
+      memberName: elder,
+      threatHeadline: threat,
+      status: "dispatched",
+    });
+    setAlertLogs((prev) => [newLog, ...prev]);
+    const url = generateWhatsAppAlertUrl(guardian?.phone, elder, threat);
+    setWhatsappUrl(url);
+  }
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-12">
@@ -43,6 +90,16 @@ function Family() {
         subtitle="Scams hit elders hardest. Keep protection on for them and let a trusted guardian know the moment something high risk appears."
       />
 
+      <div className="mb-4 flex justify-end">
+        <button
+          type="button"
+          onClick={() => setModalOpen(true)}
+          className="rounded-xl bg-primary px-4 py-2 font-mono text-xs font-semibold text-primary-foreground transition-transform hover:-translate-y-0.5"
+        >
+          + Add Family Member
+        </button>
+      </div>
+
       <div className="grid gap-6 md:grid-cols-[1.2fr_1fr]">
         <section className="space-y-4">
           {members.map((m) => (
@@ -50,23 +107,42 @@ function Family() {
               <div className="flex items-center gap-4">
                 <span className="text-3xl">{m.emoji}</span>
                 <div>
-                  <p className="font-display text-lg font-semibold">
-                    {m.name} {m.guardian && <span className="font-mono text-xs text-primary">GUARDIAN</span>}
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-display text-lg font-semibold">{m.name}</p>
+                    {m.guardian && (
+                      <span className="rounded-full bg-primary/20 px-2 py-0.5 font-mono text-[10px] text-primary font-bold">
+                        GUARDIAN
+                      </span>
+                    )}
+                  </div>
                   <p className="text-xs text-muted-foreground">{m.relation}</p>
+                  {m.phone && <p className="font-mono text-[11px] text-muted-foreground">{m.phone}</p>}
                 </div>
               </div>
-              <button
-                onClick={() =>
-                  setMembers((prev) => prev.map((x) => (x.id === m.id ? { ...x, on: !x.on } : x)))
-                }
-                className={`flex items-center gap-2 rounded-full border px-4 py-2 font-mono text-xs transition-colors ${
-                  m.on ? "border-safe/50 text-safe" : "border-border text-muted-foreground"
-                }`}
-              >
-                <span className={`h-2 w-2 rounded-full ${m.on ? "bg-safe" : "bg-muted-foreground"}`} />
-                {m.on ? "PROTECTION ON" : "OFF"}
-              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => toggleProtection(m.id)}
+                  className={`flex items-center gap-2 rounded-full border px-4 py-2 font-mono text-xs transition-colors ${
+                    m.on ? "border-safe/50 text-safe" : "border-border text-muted-foreground"
+                  }`}
+                >
+                  <span className={`h-2 w-2 rounded-full ${m.on ? "bg-safe" : "bg-muted-foreground"}`} />
+                  {m.on ? "PROTECTION ON" : "OFF"}
+                </button>
+
+                {members.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => removeMember(m.id)}
+                    className="p-1.5 text-xs text-muted-foreground hover:text-danger"
+                    title={`Remove ${m.name}`}
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
             </div>
           ))}
 
@@ -79,6 +155,7 @@ function Family() {
               </div>
             </div>
             <button
+              type="button"
               onClick={() => setAlerts((a) => !a)}
               className={`flex items-center gap-2 rounded-full border px-4 py-2 font-mono text-xs transition-colors ${
                 alerts ? "border-safe/50 text-safe" : "border-border text-muted-foreground"
@@ -88,34 +165,51 @@ function Family() {
               {alerts ? "ON" : "OFF"}
             </button>
           </div>
+
+          <EmergencyAlertHistory logs={alertLogs} />
         </section>
 
-        <aside className="glass h-fit rounded-2xl border-danger/40 p-6">
+        <aside className="glass h-fit rounded-2xl border-danger/40 p-6 space-y-4">
           <p className="font-mono text-sm font-semibold text-danger">🚨 HIGH-RISK SCAM DETECTED</p>
-          <p className="mt-3 text-sm text-muted-foreground">
-            A fake SBI KYC link was opened on a protected device. An emergency alert can be sent to your
+          <p className="text-sm text-muted-foreground">
+            A fake SBI KYC link was opened on a protected device. An emergency alert can be dispatched to your
             selected family guardian{guardian ? ` (${guardian.name})` : ""}.
           </p>
+
           <button
+            type="button"
             disabled={!alerts}
-            onClick={() => {
-              setSent(true);
-              setTimeout(() => setSent(false), 4000);
-            }}
-            className="mt-5 w-full rounded-xl bg-danger py-3 font-semibold text-destructive-foreground disabled:opacity-40"
+            onClick={triggerEmergencyAlert}
+            className="w-full rounded-xl bg-danger py-3 font-semibold text-destructive-foreground disabled:opacity-40 transition-transform active:scale-95"
           >
-            SEND ALERT
+            DISPATCH GUARDIAN ALERT
           </button>
-          {sent && (
-            <p className="mt-3 text-center text-xs text-safe">
-              ✓ Alert sent to {guardian?.name ?? "guardian"} with the scan details.
-            </p>
+
+          {whatsappUrl && (
+            <div className="rounded-xl border border-safe/40 bg-safe/10 p-3 text-center space-y-2">
+              <p className="text-xs text-safe font-semibold">✓ Alert recorded in emergency log.</p>
+              <a
+                href={whatsappUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-block rounded-lg bg-safe px-3 py-1.5 font-mono text-xs font-bold text-black hover:opacity-90 transition-opacity"
+              >
+                📲 Open in WhatsApp & Warn {guardian?.name ?? "Guardian"}
+              </a>
+            </div>
           )}
+
           {!alerts && (
-            <p className="mt-3 text-center text-xs text-warn">Emergency alerts are switched off.</p>
+            <p className="text-center text-xs text-warn">Emergency alerts are switched off.</p>
           )}
         </aside>
       </div>
+
+      <AddFamilyMemberModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        onAdd={handleAddMember}
+      />
     </div>
   );
 }
