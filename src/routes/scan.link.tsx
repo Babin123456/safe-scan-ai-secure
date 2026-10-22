@@ -5,6 +5,8 @@ import { ScanProgress } from "@/components/ScanProgress";
 import { ScanResultView } from "@/components/ScanResultView";
 import { analyzeLink, DEMO, LINK_CHECKS, type ScanResult } from "@/lib/scan-engine";
 import { recordScan } from "@/lib/store";
+import { inspectDomain, type DomainAnalysis } from "@/lib/domain-inspector";
+import { DomainIntelligenceCard } from "@/components/DomainIntelligenceCard";
 
 export const Route = createFileRoute("/scan/link")({
   head: () => ({
@@ -28,6 +30,7 @@ function LinkScanner() {
   const [url, setUrl] = useState("");
   const [phase, setPhase] = useState<"idle" | "scanning" | "done">("idle");
   const [result, setResult] = useState<ScanResult | null>(null);
+  const [domainAnalysis, setDomainAnalysis] = useState<DomainAnalysis | null>(null);
   const [error, setError] = useState("");
 
   function start() {
@@ -37,6 +40,7 @@ function LinkScanner() {
       return;
     }
     setError("");
+    setDomainAnalysis(inspectDomain(value));
     setResult(analyzeLink(value));
     setPhase("scanning");
   }
@@ -96,14 +100,18 @@ function LinkScanner() {
       )}
 
       {phase === "done" && result && (
-        <ScanResultView
-          result={result}
-          onReset={() => {
-            setPhase("idle");
-            setResult(null);
-            setUrl("");
-          }}
-        />
+        <div className="space-y-6">
+          {domainAnalysis && <DomainIntelligenceCard analysis={domainAnalysis} />}
+          <ScanResultView
+            result={result}
+            onReset={() => {
+              setPhase("idle");
+              setResult(null);
+              setDomainAnalysis(null);
+              setUrl("");
+            }}
+          />
+        </div>
       )}
     </div>
   );

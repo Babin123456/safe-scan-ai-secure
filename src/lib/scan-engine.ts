@@ -1,3 +1,5 @@
+import { inspectDomain } from "./domain-inspector";
+
 export type RiskLevel = "low" | "medium" | "high";
 
 export type Factor = {
@@ -112,6 +114,16 @@ export function analyzeLink(input: string): ScanResult {
       reasons.push("No valid HTTPS/SSL certificate detected");
     } else {
       positives.push("HTTPS present (free certificates are easy for scammers to obtain)");
+    }
+
+    // Domain intelligence inspection
+    const domainReport = inspectDomain(raw);
+    if (domainReport.warnings.length > 0) {
+      domainReport.warnings.forEach((w) => {
+        if (!reasons.includes(w)) reasons.push(w);
+      });
+      domainRisk += Math.round(domainReport.riskPenalty * 0.5);
+      authRisk += Math.round(domainReport.riskPenalty * 0.4);
     }
   }
 
